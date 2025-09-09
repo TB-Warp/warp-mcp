@@ -1,32 +1,103 @@
 # LXC MCP Server
 
-En MCP (Model Context Protocol) server der giver adgang til LXC/LXD container management gennem AI-assistenter som Warp.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-4.9+-blue.svg)](https://www.typescriptlang.org/)
 
-## Features
+En professionel MCP (Model Context Protocol) server der giver seamless adgang til LXC/LXD container management gennem AI-assistenter som Warp Terminal.
 
-Denne MCP server understøtter følgende LXC/LXD operationer:
+## 🚀 Quick Start
 
-- **lxc_list** - List alle containers
-- **lxc_info** - Få detaljeret information om en container
-- **lxc_exec** - Kør kommandoer i en container
-- **lxc_launch** - Opret og start en ny container
-- **lxc_start** - Start en container
-- **lxc_stop** - Stop en container
-- **lxc_delete** - Slet en container
+### Installation via Homebrew (Anbefalet)
 
-Alle operationer understøtter remote LXD servere via `remote` parameteren.
-
-## Installation
-
-1. Klon eller download dette repository
-2. Installer dependencies:
 ```bash
-npm install
+# Add tap (første gang)
+brew tap lpm/lxc-mcp https://github.com/lpm/homebrew-lxc-mcp
+
+# Install
+brew install lxc-mcp-server
+
+# Verificer installation
+lxc-mcp-server --help
 ```
 
-3. Byg projektet:
+### Test installation
 ```bash
+echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | lxc-mcp-server
+```
+
+## ✨ Features
+
+Denne MCP server leverer komplet LXC/LXD container management:
+
+### Core Operations
+- 🔍 **lxc_list** - List alle containers med detaljeret status
+- 📊 **lxc_info** - Komplet container information (RAM, CPU, netværk)
+- ⚡ **lxc_exec** - Kør kommandoer i containers (interaktiv support)
+- 🚀 **lxc_launch** - Opret og start nye containers
+- ▶️ **lxc_start** - Start stoppede containers
+- ⏹️ **lxc_stop** - Stop kørende containers (graceful/force)
+- 🗑️ **lxc_delete** - Slet containers (med force option)
+
+### Advanced Features
+- 🌐 **Remote LXD Support** - Administrer containers på remote servere
+- 🔗 **Tailscale Integration** - Virker perfekt med Tailscale netværk
+- 🛡️ **Type Safety** - Bygget med TypeScript for maksimal sikkerhed
+- 🎯 **Warp AI Integration** - Optimeret til Warp Terminal's Agent Mode
+- ⚡ **High Performance** - Asynkron JSON-RPC kommunikation
+
+## 📬 Installation
+
+### 🍺 Homebrew (Anbefalet - macOS)
+
+Den nemmeste og mest professionelle måde:
+
+```bash
+# Første gang: Add custom tap
+brew tap lpm/lxc-mcp https://github.com/lpm/homebrew-lxc-mcp
+
+# Install LXC MCP Server
+brew install lxc-mcp-server
+
+# Verificer installation
+lxc-mcp-server --help
+which lxc-mcp-server  # -> /usr/local/bin/lxc-mcp-server
+```
+
+**Homebrew fordele:**
+- ✅ Automatisk dependency management
+- ✅ System PATH integration 
+- ✅ Nem opdatering med `brew upgrade lxc-mcp-server`
+- ✅ Clean uninstall med `brew uninstall lxc-mcp-server`
+
+### 📦 NPM Global (Udvikling)
+
+```bash
+# Klon repository
+git clone https://github.com/lpm/lxc-mcp.git
+cd lxc-mcp
+
+# Install og byg
+npm install
 npm run build
+
+# Install globalt
+npm install -g .
+
+# Nu tilgængelig som: lxc-mcp-server
+```
+
+### 🚀 Direkte fra kilde (Advanced)
+
+```bash
+# Klon og byg
+git clone https://github.com/lpm/lxc-mcp.git
+cd lxc-mcp
+npm install
+npm run build
+
+# Kør direkte
+node build/index.js
 ```
 
 ## Brug
@@ -46,98 +117,203 @@ echo '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "lx
 echo '{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lxc_exec", "arguments": {"container": "mcp", "command": "hostname"}}}' | node build/index.js
 ```
 
-### Brug med Warp AI
+## 🔧 Warp AI Integration
 
-For at bruge denne MCP server med Warp AI, skal du tilføje den til din Warp konfiguration:
+### Quick Setup
 
-1. Åbn Warp settings
-2. Gå til MCP Servers
-3. Tilføj en ny server:
-   - **Name**: `lxc-mcp-server`
-   - **Command**: `node`
-   - **Arguments**: `["/path/to/lxc-mcp/build/index.js"]`
-   - **Environment**: `{}`
+1. **Åbn Warp Terminal**
+2. **Gå til Settings** ➜ `Cmd+,` 
+3. **Find "Agent Mode" eller "MCP Servers"**
+4. **Add New MCP Server**:
 
-## Eksempel kommandoer
-
-### List containers
 ```json
 {
-  "name": "lxc_list",
-  "arguments": {
-    "remote": "mimer"  // Valgfri - standard er current remote
+  "mcpServers": {
+    "lxc-mcp-server": {
+      "command": "lxc-mcp-server",
+      "args": []
+    }
   }
 }
 ```
 
-### Få container info
+### Alternative Konfigurationer
+
+**Homebrew installation:**
+```json
+{
+  "command": "lxc-mcp-server",
+  "args": []
+}
+```
+
+**NPM global:**
+```json
+{
+  "command": "lxc-mcp-server", 
+  "args": []
+}
+```
+
+**Direkte node:**
+```json
+{
+  "command": "node",
+  "args": ["/usr/local/lib/lxc-mcp/build/index.js"]
+}
+```
+
+### 🎨 Warp AI Usage Examples
+
+Når MCP serveren er konfigureret, kan du bruge naturligt sprog i Warp:
+
+```
+👤 User: "List mine LXC containers"
+🤖 AI: Lists all containers med status, IP-adresser og ressourceforbrug
+
+👤 User: "Run 'ps aux' in the mcp container" 
+🤖 AI: Kører ps aux kommandoen i mcp containeren
+
+👤 User: "Show me detailed info about llmgateway container"
+🤖 AI: Viser CPU, RAM, netværk og disk stats for llmgateway
+
+👤 User: "Create a new Ubuntu 22.04 container called test"
+🤖 AI: Opretter og starter en ny container med Ubuntu 22.04
+```
+
+## 📚 API Reference
+
+### 🔍 lxc_list - List Containers
+
+List alle containers med komplet status information.
+
+**Parameters:**
+```typescript
+{
+  remote?: string  // Remote LXD server navn (valgfri)
+}
+```
+
+**Eksempel:**
+```json
+{
+  "name": "lxc_list",
+  "arguments": {
+    "remote": "mimer"
+  }
+}
+```
+
+**Response:** Detaljeret JSON med container status, IP-adresser, RAM/CPU forbrug, netværksstatistik.
+
+### 📊 lxc_info - Container Information
+
+Få detaljeret information om en specifik container.
+
+**Parameters:**
+```typescript
+{
+  name: string,      // Container navn (påkrævet)
+  remote?: string    // Remote server (valgfri)
+}
+```
+
+**Eksempel:**
 ```json
 {
   "name": "lxc_info",
   "arguments": {
     "name": "mcp",
-    "remote": "mimer"  // Valgfri
+    "remote": "mimer"
   }
 }
 ```
 
-### Kør kommando i container
+**Response:** CPU usage, RAM stats, netværksinterfaces, disk usage, PID, uptime.
+
+### ⚡ lxc_exec - Execute Commands
+
+Kør kommandoer inde i en container.
+
+**Parameters:**
+```typescript
+{
+  container: string,    // Container navn (påkrævet)
+  command: string,      // Kommando at køre (påkrævet)
+  remote?: string,      // Remote server (valgfri)
+  interactive?: boolean // Interaktiv mode (default: false)
+}
+```
+
+**Eksempel:**
 ```json
 {
   "name": "lxc_exec",
   "arguments": {
     "container": "mcp",
     "command": "ls -la /home",
-    "remote": "mimer",      // Valgfri
-    "interactive": false    // Valgfri, default false
+    "remote": "mimer",
+    "interactive": false
   }
 }
 ```
 
-### Launch ny container
+**Response:** Command output (stdout + stderr).
+
+### 🚀 lxc_launch - Create Container
+
+Opret og start en ny container fra et image.
+
+**Parameters:**
+```typescript
+{
+  image: string,     // Container image (påkrævet) f.eks. "ubuntu:22.04"
+  name?: string,     // Container navn (auto-genereret hvis ikke angivet)
+  remote?: string    // Remote server (valgfri)
+}
+```
+
+**Eksempel:**
 ```json
 {
   "name": "lxc_launch",
   "arguments": {
     "image": "ubuntu:22.04",
-    "name": "test-container",  // Valgfri - auto-genereret hvis ikke angivet
-    "remote": "mimer"          // Valgfri
+    "name": "test-container",
+    "remote": "mimer"
   }
 }
 ```
 
-### Start container
-```json
+### ▶️ lxc_start - Start Container
+
+**Parameters:**
+```typescript
 {
-  "name": "lxc_start",
-  "arguments": {
-    "name": "test-container",
-    "remote": "mimer"  // Valgfri
-  }
+  name: string,      // Container navn (påkrævet)
+  remote?: string    // Remote server (valgfri)
 }
 ```
 
-### Stop container
-```json
+### ⏹️ lxc_stop - Stop Container
+
+**Parameters:**
+```typescript
 {
-  "name": "lxc_stop",
-  "arguments": {
-    "name": "test-container",
-    "remote": "mimer",  // Valgfri
-    "force": false      // Valgfri, default false
-  }
+  name: string,      // Container navn (påkrævet)
+  remote?: string,   // Remote server (valgfri)
+  force?: boolean    // Force stop (default: false)
 }
 ```
 
-### Slet container
-```json
+### 🗑️ lxc_delete - Delete Container
+
+**Parameters:**
+```typescript
 {
-  "name": "lxc_delete",
-  "arguments": {
-    "name": "test-container",
-    "remote": "mimer",  // Valgfri
-    "force": true       // Valgfri, default false - tvangsslet selv hvis kørende
-  }
+  name: string,      // Container navn (påkrævet)
+  remote?: string,   // Remote server (valgfri) 
+  force?: boolean    // Force delete hvis kørende (default: false)
 }
 ```
 
