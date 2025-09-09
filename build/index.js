@@ -5,7 +5,49 @@ import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, } f
 import { exec } from "child_process";
 import { promisify } from "util";
 import { z } from "zod";
+// Shell escaping utility
+function escapeShellArg(arg) {
+    return "'" + arg.replace(/'/g, "'\"'\"'") + "'";
+}
+// Timeout wrapper for exec
+function execWithTimeout(command, timeoutMs = 30000) {
+    return new Promise((resolve, reject) => {
+        const child = exec(command, (error, stdout, stderr) => {
+            if (error) {
+                reject(new Error(`Command failed: ${error.message}`));
+            }
+            else {
+                resolve({ stdout, stderr });
+            }
+        });
+        const timeout = setTimeout(() => {
+            child.kill('SIGTERM');
+            reject(new Error(`Command timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        child.on('exit', () => {
+            clearTimeout(timeout);
+        });
+    });
+}
+// LXC availability check
+async function checkLXCAvailability() {
+    try {
+        const { stderr } = await execWithTimeout('lxc version', 5000);
+        if (stderr && stderr.includes('daemon')) {
+            throw new Error('LXD daemon not running');
+        }
+    }
+    catch (error) {
+        throw new Error(`LXC/LXD not available: ${error}. Please ensure LXC/LXD is installed and running.`);
+    }
+}
 const execAsync = promisify(exec);
+// Separate schema for stop container operation
+const StopContainerSchema = z.object({
+    name: z.string().describe("Container name to stop"),
+    remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+    force: z.boolean().optional().default(false).describe("Force stop the container"),
+});
 // Define schemas for our tools
 const ListContainersSchema = z.object({
     remote: z.string().optional().describe("Remote LXD server name (default: current)"),
@@ -228,9 +270,9 @@ class LXCMCPServer {
     }
     async handleListContainers(args) {
         const parsed = ListContainersSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
         const command = `lxc list ${remotePrefix}--format json`;
-        const { stdout, stderr } = await execAsync(command);
+        const { stdout, stderr } = await execWithTimeout(command);
         if (stderr && stderr.trim()) {
             throw new McpError(ErrorCode.InternalError, `LXC error: ${stderr}`);
         }
@@ -245,9 +287,9 @@ class LXCMCPServer {
     }
     async handleContainerInfo(args) {
         const parsed = ContainerInfoSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
-        const command = `lxc info ${remotePrefix}${parsed.name}`;
-        const { stdout, stderr } = await execAsync(command);
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
+        const command = `lxc info ${remotePrefix}${escapeShellArg(parsed.name)}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         if (stderr && stderr.trim()) {
             throw new McpError(ErrorCode.InternalError, `LXC error: ${stderr}`);
         }
@@ -262,10 +304,10 @@ class LXCMCPServer {
     }
     async handleExecCommand(args) {
         const parsed = ExecCommandSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
         const interactiveFlag = parsed.interactive ? "-t" : "";
-        const command = `lxc exec ${remotePrefix}${parsed.container} ${interactiveFlag} -- ${parsed.command}`;
-        const { stdout, stderr } = await execAsync(command);
+        const command = `lxc exec ${remotePrefix}${escapeShellArg(parsed.container)} ${interactiveFlag} -- ${escapeShellArg(parsed.command)}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         return {
             content: [
                 {
@@ -277,10 +319,11 @@ class LXCMCPServer {
     }
     async handleLaunchContainer(args) {
         const parsed = LaunchContainerSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
-        const nameArg = parsed.name ? ` ${parsed.name}` : "";
-        const command = `lxc launch ${parsed.image}${nameArg} --remote ${parsed.remote || "local"}`;
-        const { stdout, stderr } = await execAsync(command);
+        const imageArg = escapeShellArg(parsed.image);
+        const nameArg = parsed.name ? ` ${escapeShellArg(parsed.name)}` : "";
+        const remoteArg = parsed.remote ? ` --remote=${escapeShellArg(parsed.remote)}` : "";
+        const command = `lxc launch ${imageArg}${nameArg}${remoteArg}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         return {
             content: [
                 {
@@ -292,10 +335,10 @@ class LXCMCPServer {
     }
     async handleDeleteContainer(args) {
         const parsed = DeleteContainerSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
         const forceFlag = parsed.force ? "--force" : "";
-        const command = `lxc delete ${remotePrefix}${parsed.name} ${forceFlag}`;
-        const { stdout, stderr } = await execAsync(command);
+        const command = `lxc delete ${remotePrefix}${escapeShellArg(parsed.name)} ${forceFlag}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         return {
             content: [
                 {
@@ -307,9 +350,9 @@ class LXCMCPServer {
     }
     async handleStartContainer(args) {
         const parsed = ContainerInfoSchema.parse(args);
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
-        const command = `lxc start ${remotePrefix}${parsed.name}`;
-        const { stdout, stderr } = await execAsync(command);
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
+        const command = `lxc start ${remotePrefix}${escapeShellArg(parsed.name)}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         return {
             content: [
                 {
@@ -320,11 +363,11 @@ class LXCMCPServer {
         };
     }
     async handleStopContainer(args) {
-        const parsed = DeleteContainerSchema.parse(args); // Reuse schema since it has force option
-        const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+        const parsed = StopContainerSchema.parse(args);
+        const remotePrefix = parsed.remote ? `${escapeShellArg(parsed.remote)}:` : "";
         const forceFlag = parsed.force ? "--force" : "";
-        const command = `lxc stop ${remotePrefix}${parsed.name} ${forceFlag}`;
-        const { stdout, stderr } = await execAsync(command);
+        const command = `lxc stop ${remotePrefix}${escapeShellArg(parsed.name)} ${forceFlag}`;
+        const { stdout, stderr } = await execWithTimeout(command);
         return {
             content: [
                 {
@@ -335,6 +378,14 @@ class LXCMCPServer {
         };
     }
     async run() {
+        // Check LXC availability at startup
+        try {
+            await checkLXCAvailability();
+        }
+        catch (error) {
+            console.error(`Startup failed: ${error}`);
+            process.exit(1);
+        }
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
         console.error("LXC MCP server running on stdio");
