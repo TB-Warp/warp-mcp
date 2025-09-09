@@ -117,7 +117,7 @@ echo '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "lx
 echo '{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lxc_exec", "arguments": {"container": "mcp", "command": "hostname"}}}' | node build/index.js
 ```
 
-## 🔧 Warp AI Integration
+### 🔧 Warp AI Integration
 
 ### Quick Setup
 
@@ -126,6 +126,18 @@ echo '{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lx
 3. **Find "Agent Mode" eller "MCP Servers"**
 4. **Add New MCP Server**:
 
+```json
+{
+  "mcpServers": {
+    "lxc-mcp": {
+      "command": "lxc-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+**Alternative med old name:**
 ```json
 {
   "mcpServers": {
@@ -139,18 +151,26 @@ echo '{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "lx
 
 ### Alternative Konfigurationer
 
-**Homebrew installation:**
+**Homebrew installation (new name):**
 ```json
 {
-  "command": "lxc-mcp-server",
+  "command": "lxc-mcp",
   "args": []
 }
 ```
 
-**NPM global:**
+**NPM global (new name):**
 ```json
 {
-  "command": "lxc-mcp-server", 
+  "command": "lxc-mcp", 
+  "args": []
+}
+```
+
+**Legacy name support:**
+```json
+{
+  "command": "lxc-mcp-server",
   "args": []
 }
 ```

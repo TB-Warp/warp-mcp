@@ -19,7 +19,8 @@
     "typescript": "^5.5.0"
   },
   "bin": {
-    "lxc-mcp-server": "build/index.js"
+    "lxc-mcp-server": "build/index.js",
+    "lxc-mcp": "build/index.js"
   },
   "keywords": ["mcp", "lxc", "lxd", "containers", "server"],
   "author": "lpm",
