@@ -74,7 +74,7 @@ which lxc-mcp-server  # -> /usr/local/bin/lxc-mcp-server
 
 ```bash
 # Klon repository
-git clone https://github.com/lpm/lxc-mcp.git
+git clone https://github.com/TB-Warp/lxc-mcp.git
 cd lxc-mcp
 
 # Install og byg
@@ -91,7 +91,7 @@ npm install -g .
 
 ```bash
 # Klon og byg
-git clone https://github.com/lpm/lxc-mcp.git
+git clone https://github.com/TB-Warp/lxc-mcp.git
 cd lxc-mcp
 npm install
 npm run build
