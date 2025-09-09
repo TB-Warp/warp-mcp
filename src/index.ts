@@ -1,0 +1,395 @@
+#!/usr/bin/env node
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError,
+} from "@modelcontextprotocol/sdk/types.js";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { z } from "zod";
+
+const execAsync = promisify(exec);
+
+// Define schemas for our tools
+const ListContainersSchema = z.object({
+  remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+});
+
+const ContainerInfoSchema = z.object({
+  name: z.string().describe("Container name"),
+  remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+});
+
+const ExecCommandSchema = z.object({
+  container: z.string().describe("Container name"),
+  command: z.string().describe("Command to execute"),
+  remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+  interactive: z.boolean().optional().default(false).describe("Run in interactive mode"),
+});
+
+const LaunchContainerSchema = z.object({
+  image: z.string().describe("Container image (e.g., ubuntu:22.04)"),
+  name: z.string().optional().describe("Container name (auto-generated if not provided)"),
+  remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+});
+
+const DeleteContainerSchema = z.object({
+  name: z.string().describe("Container name to delete"),
+  remote: z.string().optional().describe("Remote LXD server name (default: current)"),
+  force: z.boolean().optional().default(false).describe("Force deletion even if running"),
+});
+
+class LXCMCPServer {
+  private server: Server;
+
+  constructor() {
+    this.server = new Server(
+      {
+        name: "lxc-mcp-server",
+        version: "1.0.0",
+      }
+    );
+
+    this.setupToolHandlers();
+    this.setupErrorHandling();
+  }
+
+  private setupErrorHandling(): void {
+    this.server.onerror = (error) => console.error("[MCP Error]", error);
+    process.on("SIGINT", async () => {
+      await this.server.close();
+      process.exit(0);
+    });
+  }
+
+  private setupToolHandlers(): void {
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: "lxc_list",
+          description: "List all containers",
+          inputSchema: {
+            type: "object",
+            properties: {
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+            },
+          },
+        },
+        {
+          name: "lxc_info",
+          description: "Get detailed information about a container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Container name",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+            },
+            required: ["name"],
+          },
+        },
+        {
+          name: "lxc_exec",
+          description: "Execute a command in a container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              container: {
+                type: "string",
+                description: "Container name",
+              },
+              command: {
+                type: "string",
+                description: "Command to execute",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+              interactive: {
+                type: "boolean",
+                description: "Run in interactive mode",
+                default: false,
+              },
+            },
+            required: ["container", "command"],
+          },
+        },
+        {
+          name: "lxc_launch",
+          description: "Launch a new container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              image: {
+                type: "string",
+                description: "Container image (e.g., ubuntu:22.04)",
+              },
+              name: {
+                type: "string",
+                description: "Container name (auto-generated if not provided)",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+            },
+            required: ["image"],
+          },
+        },
+        {
+          name: "lxc_delete",
+          description: "Delete a container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Container name to delete",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+              force: {
+                type: "boolean",
+                description: "Force deletion even if running",
+                default: false,
+              },
+            },
+            required: ["name"],
+          },
+        },
+        {
+          name: "lxc_start",
+          description: "Start a container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Container name to start",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+            },
+            required: ["name"],
+          },
+        },
+        {
+          name: "lxc_stop",
+          description: "Stop a container",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Container name to stop",
+              },
+              remote: {
+                type: "string",
+                description: "Remote LXD server name (default: current)",
+              },
+              force: {
+                type: "boolean",
+                description: "Force stop the container",
+                default: false,
+              },
+            },
+            required: ["name"],
+          },
+        },
+      ],
+    }));
+
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      try {
+        switch (name) {
+          case "lxc_list":
+            return await this.handleListContainers(args);
+          case "lxc_info":
+            return await this.handleContainerInfo(args);
+          case "lxc_exec":
+            return await this.handleExecCommand(args);
+          case "lxc_launch":
+            return await this.handleLaunchContainer(args);
+          case "lxc_delete":
+            return await this.handleDeleteContainer(args);
+          case "lxc_start":
+            return await this.handleStartContainer(args);
+          case "lxc_stop":
+            return await this.handleStopContainer(args);
+          default:
+            throw new McpError(
+              ErrorCode.MethodNotFound,
+              `Unknown tool: ${name}`
+            );
+        }
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Tool execution failed: ${error}`
+        );
+      }
+    });
+  }
+
+  private async handleListContainers(args: any) {
+    const parsed = ListContainersSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const command = `lxc list ${remotePrefix}--format json`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    if (stderr && stderr.trim()) {
+      throw new McpError(ErrorCode.InternalError, `LXC error: ${stderr}`);
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Containers:\n${stdout}`,
+        },
+      ],
+    };
+  }
+
+  private async handleContainerInfo(args: any) {
+    const parsed = ContainerInfoSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const command = `lxc info ${remotePrefix}${parsed.name}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    if (stderr && stderr.trim()) {
+      throw new McpError(ErrorCode.InternalError, `LXC error: ${stderr}`);
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Container info for ${parsed.name}:\n${stdout}`,
+        },
+      ],
+    };
+  }
+
+  private async handleExecCommand(args: any) {
+    const parsed = ExecCommandSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const interactiveFlag = parsed.interactive ? "-t" : "";
+    const command = `lxc exec ${remotePrefix}${parsed.container} ${interactiveFlag} -- ${parsed.command}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Command output:\n${stdout}\n${stderr ? `Errors:\n${stderr}` : ""}`,
+        },
+      ],
+    };
+  }
+
+  private async handleLaunchContainer(args: any) {
+    const parsed = LaunchContainerSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const nameArg = parsed.name ? ` ${parsed.name}` : "";
+    const command = `lxc launch ${parsed.image}${nameArg} --remote ${parsed.remote || "local"}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Launch result:\n${stdout}\n${stderr ? `Warnings:\n${stderr}` : ""}`,
+        },
+      ],
+    };
+  }
+
+  private async handleDeleteContainer(args: any) {
+    const parsed = DeleteContainerSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const forceFlag = parsed.force ? "--force" : "";
+    const command = `lxc delete ${remotePrefix}${parsed.name} ${forceFlag}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Delete result:\n${stdout}\n${stderr ? `Warnings:\n${stderr}` : ""}`,
+        },
+      ],
+    };
+  }
+
+  private async handleStartContainer(args: any) {
+    const parsed = ContainerInfoSchema.parse(args);
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const command = `lxc start ${remotePrefix}${parsed.name}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Start result:\n${stdout}\n${stderr ? `Warnings:\n${stderr}` : ""}`,
+        },
+      ],
+    };
+  }
+
+  private async handleStopContainer(args: any) {
+    const parsed = DeleteContainerSchema.parse(args); // Reuse schema since it has force option
+    const remotePrefix = parsed.remote ? `${parsed.remote}:` : "";
+    const forceFlag = parsed.force ? "--force" : "";
+    const command = `lxc stop ${remotePrefix}${parsed.name} ${forceFlag}`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Stop result:\n${stdout}\n${stderr ? `Warnings:\n${stderr}` : ""}`,
+        },
+      ],
+    };
+  }
+
+  async run(): Promise<void> {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+    console.error("LXC MCP server running on stdio");
+  }
+}
+
+const server = new LXCMCPServer();
+server.run().catch(console.error);

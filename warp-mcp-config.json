@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "lxc-mcp-server": {
+      "command": "node",
+      "args": ["/Users/lpm/Repo/lxc-mcp/build/index.js"],
+      "env": {}
+    }
+  }
+}
